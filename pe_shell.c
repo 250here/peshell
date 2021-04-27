@@ -163,7 +163,7 @@ void saveNewPEFile(const char *originalFilePath){
     char ext[_MAX_EXT];
     _splitpath(originalFilePath,NULL,NULL,fname,ext);
     char newfilepath[_MAX_FNAME+_MAX_EXT+16];
-    sprintf(newfilepath,("./%s%s"),fname,ext);
+    sprintf(newfilepath,("./%s_%s"),fname,ext);
     
     PIMAGE_SECTION_HEADER pFirstSectionHeader=IMAGE_FIRST_SECTION(mPe.pNtHeader);
     WORD secNum=mPe.pNtHeader->FileHeader.NumberOfSections;
