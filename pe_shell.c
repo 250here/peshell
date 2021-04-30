@@ -112,6 +112,7 @@ void encryptTextSec(){
     DWORD key=mPe.pNtHeader->FileHeader.TimeDateStamp;
     key=key^0x20210416;
     key=key^mPe.pNtHeader->OptionalHeader.AddressOfEntryPoint;
+    printf("originKey:%lx;timestamp:%lx;eP:%lx\n",key,mPe.pNtHeader->FileHeader.TimeDateStamp,mPe.pNtHeader->OptionalHeader.AddressOfEntryPoint);
     
     DWORD entryPoint=mPe.pNtHeader->OptionalHeader.AddressOfEntryPoint;
     PIMAGE_SECTION_HEADER pTextSectionHeader=IMAGE_FIRST_SECTION(mPe.pNtHeader);
@@ -126,10 +127,18 @@ void encryptTextSec(){
     }
     DWORD start=pTextSectionHeader->PointerToRawData+(DWORD)pPeFileBuf;
     DWORD end=start+pTextSectionHeader->SizeOfRawData;
+    printf("textSize:0x%lx,startRVA:0x%lx\n",pTextSectionHeader->SizeOfRawData,pTextSectionHeader->VirtualAddress);
     PDWORD index=(PDWORD)start;
     for(;((DWORD)index)<=end-sizeof(DWORD);index++){
+        if((DWORD)index-start<16){
+            printf("key%d:0x%lx,text:0x%lx\n",(DWORD)index-start,key,*index);
+        }
+        if((DWORD)index==end-sizeof(DWORD)){
+            printf("last key0x%lx:0x%lx,text:0x%lx\n",(DWORD)index-start,key,*index);
+        }
+        DWORD newkey=*index^key;
         *index=(*index)^key;
-        key=key^*index;
+        key=newkey;
     }
 }
 

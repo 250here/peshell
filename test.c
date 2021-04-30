@@ -51,6 +51,20 @@ void printLog(){
     printf("0123789");
 }
 
+void str2hex(const char* str){
+    int len=strlen(str);
+    len=len%4==0?len:(len/4+1)*4;
+    unsigned char buf[len];
+    memset(buf,0,len);
+    strcpy(buf,str);
+    printf(buf);
+    //printf("%ld",buf);
+    for(int i=0;i<len/4;i++){
+        printf(" 0x%lx ",*(PDWORD)(buf+i*4));
+    }
+    printf("\n");
+}
+
 int main(){
     // HMODULE base1=(HMODULE)getBaseAddresses();
     // HMODULE base2=LoadLibrary("Kernel32.dll");
@@ -62,9 +76,17 @@ int main(){
     // PDWORD Base = *(PDWORD *)((PBYTE)Peb + 0x8);
     // printf("%lx\n",Base);
 
-    // HMODULE kernel=LoadLibrary("kernel32.dll");
+    HMODULE kernel=LoadLibrary("kernel32.dll");
     // FARPROC(WINAPI *p)(HINSTANCE,LPSTR);
-    // printf("val:%lx,expect:%lx",GetProcAddress(kernel,"GetProcAddress"),getFunction_t((DWORD)kernel,0x65eaeaf6));
+    //printf("val:%lx,expect:%lx",GetProcAddress(kernel,"VirtualProtect"),getFunction_t((DWORD)kernel,0x15d10e2e));
 
-    jump((DWORD)printLog);
+    //jump((DWORD)printLog);
+    str2hex(".text");
+    
+    // DWORD st[3];
+    // st[0]=0x6e697270;
+    // st[1]=0x6674;
+    // st[2]=0x6c6c;
+    // printf((char*)st);
+    stubRun();
 }
