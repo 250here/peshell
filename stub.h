@@ -29,5 +29,6 @@ void decryptTextSection(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEI
 void getfunctions(struct FUNCTION_TABLE* funcTable,DWORD kernel32Base);
 void fixROC(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* pPeInfo);
 PIMAGE_NT_HEADERS getNtHeaders(DWORD pPEbase);
+void fixIAT(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* pPeInfo);
 
 #endif

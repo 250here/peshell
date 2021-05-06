@@ -127,14 +127,14 @@ void encryptTextSec(){
     }
     DWORD start=pTextSectionHeader->PointerToRawData+(DWORD)pPeFileBuf;
     DWORD end=start+pTextSectionHeader->SizeOfRawData;
-    printf("textSize:0x%lx,startRVA:0x%lx\n",pTextSectionHeader->SizeOfRawData,pTextSectionHeader->VirtualAddress);
+    //printf("textSize:0x%lx,startRVA:0x%lx\n",pTextSectionHeader->SizeOfRawData,pTextSectionHeader->VirtualAddress);
     PDWORD index=(PDWORD)start;
     for(;((DWORD)index)<=end-sizeof(DWORD);index++){
         if((DWORD)index-start<16){
-            printf("key%d:0x%lx,text:0x%lx\n",(DWORD)index-start,key,*index);
+            //printf("key%d:0x%lx,text:0x%lx\n",(DWORD)index-start,key,*index);
         }
         if((DWORD)index==end-sizeof(DWORD)){
-            printf("last key0x%lx:0x%lx,text:0x%lx\n",(DWORD)index-start,key,*index);
+            //   printf("last key0x%lx:0x%lx,text:0x%lx\n",(DWORD)index-start,key,*index);
         }
         DWORD newkey=*index^key;
         *index=(*index)^key;
@@ -195,6 +195,7 @@ void saveNewPEFile(const char *originalFilePath){
     *(pLastSectionHeader+1)=newSection;
 
     memcpy(pPeFileBuf+sizeof(IMAGE_DOS_SIGNATURE),&peInfo,sizeof(peInfo));
+    printf("Peinfo at:0x%x\n",0+sizeof(IMAGE_DOS_SIGNATURE));
 
     mPe.pNtHeader->OptionalHeader.SizeOfImage+=ALIGNIT((mPe.pNtHeader->OptionalHeader.SectionAlignment ), (mDll.dllTextSecSize));
     mPe.pNtHeader->FileHeader.NumberOfSections+=1;

@@ -18,9 +18,10 @@ __declspec(dllexport) int stubRun()
     //while (pPeInfo->oldbase);
     decryptTextSection(&funcTable,pEbase,pPeInfo);
     fixROC(&funcTable,pEbase,pPeInfo);
+    fixIAT(&funcTable,pEbase,pPeInfo);
     int (*p)()=(PVOID)(pEbase+pPeInfo->originalEntryPoint);
-    while((DWORD)p>0);
-    asm("leave");
+    //while((DWORD)p>0);
+    //asm("leave");
     p();
     asm("ret");
 }
@@ -132,22 +133,22 @@ void getfunctions(struct FUNCTION_TABLE* funcTable,DWORD kernel32Base){
     funcTable->funcVirtualAlloc=getFunction(kernel32Base,0x23e765e4);
     funcTable->funcVirtualProtect=getFunction(kernel32Base,0x15d10e2e);
 //while(1);
-    FARPROC(WINAPI *func_getProcAddress)(HINSTANCE,LPSTR)=funcTable->funcGetProcAddress;
-    HMODULE(WINAPI *func_LoadLibrary)(LPCTSTR)=funcTable->funcLoadlibraryA;
-    DWORD st[3];
-    st[0]=0x6376736d;
-    st[1]=0x642e7472;
-    st[2]=0x6c6c;
-    DWORD st2[2];
-    st2[0]=0x73747570;
-    st2[1]=0x0;
-    int(*func_printf)(const char*,...)=(PVOID)func_getProcAddress(func_LoadLibrary((char*)st),(char*)(st2));
+    // FARPROC(WINAPI *func_getProcAddress)(HINSTANCE,LPSTR)=funcTable->funcGetProcAddress;
+    // HMODULE(WINAPI *func_LoadLibrary)(LPCTSTR)=funcTable->funcLoadlibraryA;
+    // DWORD st[3];
+    // st[0]=0x6376736d;
+    // st[1]=0x642e7472;
+    // st[2]=0x6c6c;
+    //DWORD st2[2];
+    //st2[0]=0x73747570;
+    //st2[1]=0x0;
+    //int(*func_printf)(const char*,...)=(PVOID)func_getProcAddress(func_LoadLibrary((char*)st),(char*)(st2));
     //while((DWORD)func_printf==0x76f64cb0);
     // printf("func::%lx   ",func_printf);
     // printf("truefunc::%lx   ",GetProcAddress(LoadLibrary("msvcrt.dll"),"puts"));
     // while(1);
 
-    st2[1]='\n'-0;
+    //st2[1]='\n'-0;
     //while ((char*)func_printf);
     //func_printf((char*)st2);
 }
@@ -179,11 +180,11 @@ void decryptTextSection(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEI
     //while(end-start==0x2c00);
     //while(peBase>0);
 
-    BOOL(*fVirtualProtect)(LPVOID lpAddress,DWORD dwSize,DWORD flNewProtect,PDWORD lpflOldProtect);
+    BOOL(WINAPI *fVirtualProtect)(LPVOID lpAddress,DWORD dwSize,DWORD flNewProtect,PDWORD lpflOldProtect);
     fVirtualProtect=funcTable->funcVirtualProtect;
     DWORD oldProtect;
 
-    asm("subl    $0x10, %esp");
+    //asm("subl    $0x10, %esp");
     fVirtualProtect((LPVOID)start,pTextSectionHeader->SizeOfRawData,PAGE_EXECUTE_READWRITE,&oldProtect);
     //asm("sub %esp,0x10");
     for(;((DWORD)index)<=end-sizeof(DWORD);index++){
@@ -204,10 +205,10 @@ void decryptTextSection(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEI
 
     DWORD temp=0;
     //while(peBase>0);
-    asm("subl    $0x10, %esp");
+    //asm("subl    $0x10, %esp");
     HRESULT re= fVirtualProtect((LPVOID)start,pTextSectionHeader->SizeOfRawData,PAGE_EXECUTE_READ,&oldProtect);
-    asm("subl    $0x10, %esp");
-    re= fVirtualProtect((LPVOID)start,pTextSectionHeader->SizeOfRawData,PAGE_EXECUTE_READ,&oldProtect);
+    //asm("subl    $0x10, %esp");
+    //re= fVirtualProtect((LPVOID)start,pTextSectionHeader->SizeOfRawData,PAGE_EXECUTE_READ,&oldProtect);
     // if(temp){
     //     return;
     // }
@@ -217,5 +218,61 @@ void decryptTextSection(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEI
 
 
 void fixROC(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* pPeInfo){
+    if(pPeInfo->ROC.VirtualAddress==0){
+        return;
+    }
+    if(peBase==pPeInfo->oldbase){
+        return;
+    }
+    PIMAGE_BASE_RELOCATION pRelo=(PIMAGE_BASE_RELOCATION)(peBase+pPeInfo->ROC.VirtualAddress);
+    PIMAGE_NT_HEADERS pNtHeaders=getNtHeaders(peBase);
+    while(pRelo->VirtualAddress!=0){
+        DWORD num=(pRelo->SizeOfBlock-sizeof(PIMAGE_BASE_RELOCATION))/(sizeof(WORD));
+        PWORD pData=(PWORD)((DWORD)pRelo+pRelo->SizeOfBlock);
+        for(DWORD i=0;i<num;i++){
+            WORD data=pData[i];
+            if(data>>12==IMAGE_REL_BASED_HIGHLOW){
+               PDWORD pReloAddr=(PDWORD)(peBase+pRelo->VirtualAddress+data&0x0FFF);
+               *pReloAddr=*pReloAddr+peBase-pPeInfo->oldbase;
+            }
+            //IMAGE_REL_BASED_DIR64?
+        }
+        pRelo=(PIMAGE_BASE_RELOCATION)((PBYTE)pRelo+pRelo->SizeOfBlock);
+    }
 
+}
+void fixIAT(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* pPeInfo){
+    HMODULE(WINAPI* fGetModuleHandleA)(LPCSTR lpModuleName)=funcTable->funcGetModuleHandleA;
+    HMODULE(WINAPI* fLoadLibraryA)(LPCSTR lpLibFileName)=funcTable->funcLoadlibraryA;
+    FARPROC(WINAPI* fGetProcAddress)(HMODULE hModule, LPCSTR lpProcName)=funcTable->funcGetProcAddress;
+    LPVOID(WINAPI* fVirtualAlloc)(LPVOID lpAddress,SIZE_T dwSize,DWORD flAllocationType,DWORD flProtect)=funcTable->funcVirtualAlloc;
+
+    PIMAGE_IMPORT_DESCRIPTOR pImportTable=(PIMAGE_IMPORT_DESCRIPTOR)(peBase+pPeInfo->IAT.VirtualAddress);
+
+    while(pImportTable->OriginalFirstThunk){
+        
+        LPCSTR dllName=(LPCSTR)(peBase+pImportTable->Name);
+        HMODULE dllBase=fGetModuleHandleA(dllName);
+        if(dllBase==NULL){
+            dllBase=fLoadLibraryA(dllName);
+        }
+
+        PIMAGE_THUNK_DATA originalThunk=(PIMAGE_THUNK_DATA)(peBase+pImportTable->OriginalFirstThunk);
+        PIMAGE_THUNK_DATA fixThunk=(PIMAGE_THUNK_DATA)(peBase+pImportTable->FirstThunk);
+
+        DWORD importFuncAddr=0;
+
+        for(DWORD index=0;originalThunk[index].u1.AddressOfData;index++){
+            //while (pImportTable);
+            if((originalThunk[index].u1.Ordinal>>(sizeof(originalThunk[index].u1.Ordinal)*8-1))==1){
+                importFuncAddr=(DWORD)fGetProcAddress(dllBase,(LPSTR)(originalThunk[index].u1.Ordinal&0xFFFF));
+            }else{
+                PIMAGE_IMPORT_BY_NAME pImportByNameTable=(PIMAGE_IMPORT_BY_NAME)(peBase+originalThunk[index].u1.AddressOfData);
+                importFuncAddr=(DWORD)fGetProcAddress(dllBase,(LPSTR)(pImportByNameTable->Name));
+            }
+            fixThunk[index].u1.Function=importFuncAddr;
+        }
+
+        pImportTable++;
+    }
 }
