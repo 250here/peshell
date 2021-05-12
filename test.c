@@ -23,15 +23,15 @@ PVOID getFunction_t(DWORD pKernel32DllBase,DWORD funcNameHash){
     // printf("nameAd:%lx\n",pExportDir->AddressOfNames);
     // print_mem_c(*functionNames+pKernel32DllBase);
     DWORD index=0;
-    //char namebuf[1000];
-    //sprintf(namebuf,"./%s.funcHash.txt","kernel32.dll");
-    //FILE* f= fopen(namebuf,"w");
+    char namebuf[1000];
+    sprintf(namebuf,"./%s.funcHash.txt","user32.dll");
+    FILE* f= fopen(namebuf,"w");
     for(;index<funcNum;index++){
-        //char buf[1000];
-        //sprintf(buf,"%s::%lx\n",functionNames[index]+pKernel32DllBase,RSHash(functionNames[index]+pKernel32DllBase,0));
-        //fwrite(buf,1,strlen(buf),f);
+        char buf[1000];
+        sprintf(buf,"%s::%lx\n",functionNames[index]+pKernel32DllBase,RSHash(functionNames[index]+pKernel32DllBase,0));
+        fwrite(buf,1,strlen(buf),f);
         if(RSHash(functionNames[index]+pKernel32DllBase,0)==funcNameHash){
-            printf(functionNames[index]+pKernel32DllBase);
+            //printf(functionNames[index]+pKernel32DllBase);
             return (PVOID)(functionAddresses[functionsAddressNamesOfOriginal[index]]+pKernel32DllBase);
         }
     }
@@ -71,22 +71,33 @@ int main(){
     // printf("val:%lx,expect:%lx",base1,base2);
 
     // printf("%lx\n",(PBYTE)GetModuleHandle(NULL));
-    // PDWORD Teb = (PDWORD)NtCurrentTeb();                             //_TEB
-    // PDWORD Peb = *(PDWORD *)((PBYTE)Teb + 0x30);                     //PEB
-    // PDWORD Base = *(PDWORD *)((PBYTE)Peb + 0x8);
-    // printf("%lx\n",Base);
-
+    PDWORD Teb = (PDWORD)NtCurrentTeb();                             //_TEB
+    PDWORD Peb = *(PDWORD *)((PBYTE)Teb + 0x30);                     //PEB
+    //print_mem_c((PBYTE)Peb);
+    PDWORD Ldr = *(PDWORD *)((PBYTE)Peb + 0xc);                      //LDR_DATA_Addr
+    LIST_ENTRY *pNode = (LIST_ENTRY *)*(PVOID *)((PBYTE)Ldr + 0x1c); //InInitializationOrderModuleList
+    LIST_ENTRY *pNodeStart = pNode;
+    while (pNode)
+    {
+        printf(("%ls::%lx\n"),((PBYTE)pNode) + 0xd8,RSHash(((PBYTE)pNode) + 0xd8, 1));
+        pNode = pNode->Flink;
+        if (pNode == pNodeStart)
+        {
+            break;
+        }
+    }
     HMODULE kernel=LoadLibrary("kernel32.dll");
+    //getFunction_t((DWORD)LoadLibrary("user32.dll"),0);
     // FARPROC(WINAPI *p)(HINSTANCE,LPSTR);
     //printf("val:%lx,expect:%lx",GetProcAddress(kernel,"VirtualProtect"),getFunction_t((DWORD)kernel,0x15d10e2e));
 
     //jump((DWORD)printLog);
-    str2hex(".text");
+    str2hex("BlockInput");
     
     // DWORD st[3];
     // st[0]=0x6e697270;
     // st[1]=0x6674;
     // st[2]=0x6c6c;
     // printf((char*)st);
-    stubRun();
+    //stubRun();
 }

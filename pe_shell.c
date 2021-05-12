@@ -72,6 +72,22 @@ int open_PE_file(const char *filePath){
     return 1;
 }
 
+DWORD RSHashFunc(DWORD start, DWORD end)
+{
+    unsigned int b = 378551;
+    unsigned int a = 63689;
+    unsigned int hash = 0;
+    PBYTE str = (PBYTE)start;
+    {
+        while (str < (PBYTE)end)
+        {
+            hash = hash * a + (*str++);
+            a *= b;
+        }
+    }
+    return (hash & 0x7FFFFFFF);
+}
+
 
 void loadStubDll(){
     char stubDllPath[]=".\\stub.dll";
@@ -96,6 +112,20 @@ void loadStubDll(){
     mDll.dllTextSecSize=pTextSecHeader->SizeOfRawData;
     mDll.dllTextSec=textSec;
     mDll.runFuncAddress=entryFuncVA-pTextSecHeader->VirtualAddress;
+
+    //fix hash and roc
+    DWORD oldProtect;
+    //VirtualProtect(textSec,pTextSecHeader->SizeOfRawData,PAGE_EXECUTE_READWRITE,&oldProtect);
+    char funcNames[4][50]={"antiDebug","decryptTextSection","fixROC","fixIAT"};
+    int chainNum=1;
+    for(int i=0;i<chainNum;i++){
+        DWORD originFuncAddr1=(DWORD)GetProcAddress(stubModule,funcNames[i]);
+        DWORD originFuncAddr2=(DWORD)GetProcAddress(stubModule,funcNames[i+1]);
+        DWORD funcAddr1=(DWORD)GetProcAddress(stubModule,funcNames[i])-((DWORD)stubModule)-pTextSecHeader->VirtualAddress+(DWORD)textSec;
+        DWORD funcAddr2=(DWORD)GetProcAddress(stubModule,funcNames[i+1])-((DWORD)stubModule)-pTextSecHeader->VirtualAddress+(DWORD)textSec;
+        DWORD hash=RSHashFunc(funcAddr1,funcAddr2);
+        
+    }
 }
 
 void destroynTables(){

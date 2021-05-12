@@ -3,6 +3,7 @@
 
 #include <windows.h>
 #include <stdio.h>
+
 struct PEINFO
 {
     DWORD oldbase;
@@ -20,15 +21,22 @@ struct FUNCTION_TABLE
     PVOID funcVirtualAlloc;
 };
 
+struct HASHCHAINNODE
+{
+    PVOID nextFuncAddr;
+    DWORD lastFuncHash;
+};
+
 __declspec(dllexport) int stubRun();
 
 unsigned int RSHash(char *str,int isWide);
 void getBaseAddresses();
 PVOID getFunction(DWORD pKernel32DllBase,DWORD funcNameHash);
-void decryptTextSection(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* peInfo);
+__declspec(dllexport) DWORD decryptTextSection(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* peInfo);
 void getfunctions(struct FUNCTION_TABLE* funcTable,DWORD kernel32Base);
-void fixROC(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* pPeInfo);
+__declspec(dllexport) DWORD fixROC(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* pPeInfo);
 PIMAGE_NT_HEADERS getNtHeaders(DWORD pPEbase);
-void fixIAT(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* pPeInfo);
+__declspec(dllexport) DWORD fixIAT(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* pPeInfo);
+__declspec(dllexport) void antiDebug(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* pPeInfo,DWORD pKernel32DllBase);
 
 #endif
