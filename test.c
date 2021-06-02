@@ -4,8 +4,21 @@
 void print_mem_c(PBYTE p){
     int i=0;
     for(i=0;i<0x180;i++){   
-        BYTE Ldr=*(PBYTE)((PBYTE)p+i*0x1);
-        printf("offset:0x%lx,Val:%c 0x%x\n",i,Ldr,Ldr);
+        char Ldr=*(PBYTE)((PBYTE)p+i*0x1);
+        // printf("offset:0x%lx,Val:%c 0x%x\n",i,Ldr,Ldr);
+        if(i%0x10==0){
+            printf("\noffset:0x%lx,",i);
+        }
+        printf("%c",Ldr);
+    }
+    printf("\n");
+}
+
+void print_mem_d(PBYTE p){
+    int i=0;
+    for(i=0;i<0x180;i+=1){   
+        DWORD Ldr=*(PDWORD)((PBYTE)p+i*0x1);
+        printf("offset:0x%lx,Val:0x%lx\n",i,Ldr);
     }
 }
 
@@ -67,8 +80,8 @@ void str2hex(const char* str){
 
 int main(){
     // HMODULE base1=(HMODULE)getBaseAddresses();
-    // HMODULE base2=LoadLibrary("Kernel32.dll");
-    // printf("val:%lx,expect:%lx",base1,base2);
+    HMODULE base2=LoadLibrary("Kernelbase.dll");
+    //printf("kernelbase.dll at:%lx",(DWORD)base2);
 
     // printf("%lx\n",(PBYTE)GetModuleHandle(NULL));
     PDWORD Teb = (PDWORD)NtCurrentTeb();                             //_TEB
@@ -77,9 +90,11 @@ int main(){
     PDWORD Ldr = *(PDWORD *)((PBYTE)Peb + 0xc);                      //LDR_DATA_Addr
     LIST_ENTRY *pNode = (LIST_ENTRY *)*(PVOID *)((PBYTE)Ldr + 0x1c); //InInitializationOrderModuleList
     LIST_ENTRY *pNodeStart = pNode;
+    //print_mem_c((PBYTE)pNode->Flink);
+    //print_mem_d((PBYTE)pNode->Flink);
     while (pNode)
     {
-        printf(("%ls::%lx\n"),((PBYTE)pNode) + 0xd8,RSHash(((PBYTE)pNode) + 0xd8, 1));
+        //printf(("%ls::%lx\n"),((PBYTE)pNode) + 0xd8,RSHash(((PBYTE)pNode) + 0xd8, 1));
         pNode = pNode->Flink;
         if (pNode == pNodeStart)
         {
@@ -92,7 +107,9 @@ int main(){
     //printf("val:%lx,expect:%lx",GetProcAddress(kernel,"VirtualProtect"),getFunction_t((DWORD)kernel,0x15d10e2e));
 
     //jump((DWORD)printLog);
-    str2hex("BlockInput");
+    //str2hex("kernel32.dll");
+    printf("%x\n",FindWindow(NULL,"test"));
+    //str2hex("GetTickCount");
     
     // DWORD st[3];
     // st[0]=0x6e697270;

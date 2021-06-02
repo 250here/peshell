@@ -4,6 +4,8 @@
 #include <windows.h>
 #include <stdio.h>
 
+#define STUB_DEBUG
+
 struct PEINFO
 {
     DWORD oldbase;
@@ -27,10 +29,10 @@ struct HASHCHAINNODE
     DWORD lastFuncHash;
 };
 
-__declspec(dllexport) int stubRun();
-
+__declspec(dllexport) int stubRun(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow);
+BOOL isDLL(DWORD peBase);
 unsigned int RSHash(char *str,int isWide);
-void getBaseAddresses();
+__declspec(dllexport) void getBaseAddresses(PDWORD pKernelDllBase, PDWORD pPEBase);
 PVOID getFunction(DWORD pKernel32DllBase,DWORD funcNameHash);
 __declspec(dllexport) DWORD decryptTextSection(struct FUNCTION_TABLE* funcTable,DWORD peBase,struct PEINFO* peInfo);
 void getfunctions(struct FUNCTION_TABLE* funcTable,DWORD kernel32Base);

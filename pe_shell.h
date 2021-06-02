@@ -7,7 +7,7 @@
 
 
 
-int add_shell(const char *filePath);
+int add_shell(const char *filePath,const char* targetFilePath);
 int open_PE_file(const char *filePath);
 int check_PE();
 void encryptTextSec();

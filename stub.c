@@ -4,24 +4,73 @@
 #pragma comment(linker, "/merge:.rdata=.text")
 #pragma comment(linker, "/section:.text,RWE")
 
-__declspec(dllexport) int stubRun()
+__declspec(dllexport) int stubRun(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
+
+    //stubRun(hInstance, hPrevInstance, lpCmdLine, nCmdShow);
+    // struct PEINFO peInfo;
+    // struct PEINFO *pPeInfo = &peInfo;
+    volatile DWORD isDll = 0x42345678;
     struct PEINFO *pPeInfo;
     DWORD kernel32Base = 0;
     DWORD pEbase = 0;
     struct FUNCTION_TABLE funcTable;
     getBaseAddresses(&kernel32Base, &pEbase);
-    getfunctions(&funcTable, kernel32Base);
+    // while(pEbase);
+    //peInfo = *(struct PEINFO *)(pEbase + sizeof(IMAGE_DOS_SIGNATURE));
     pPeInfo = (struct PEINFO *)(pEbase + sizeof(IMAGE_DOS_SIGNATURE));
-    //while (pPeInfo->oldbase);
-    antiDebug(&funcTable, pEbase, pPeInfo, kernel32Base);
-    int (*p)() = (PVOID)(pEbase + pPeInfo->originalEntryPoint);
-    //while((DWORD)p>0);
-    //asm("leave");
-    p();
-    //asm("ret");
+    if (pPeInfo->oldbase > 13)
+    {
+
+        getfunctions(&funcTable, kernel32Base);
+        //while (pPeInfo->oldbase);
+        antiDebug(&funcTable, pEbase, pPeInfo, kernel32Base);
+
+        BOOL(WINAPI * fVirtualProtect)
+        (LPVOID lpAddress, DWORD dwSize, DWORD flNewProtect, PDWORD lpflOldProtect);
+        fVirtualProtect = funcTable.funcVirtualProtect;
+        DWORD oldProtect;
+        fVirtualProtect(pPeInfo, sizeof(struct PEINFO), PAGE_READWRITE, &oldProtect);
+        DWORD temp = 0;
+        pPeInfo->oldbase = 0;
+        fVirtualProtect(pPeInfo, sizeof(struct PEINFO), oldProtect, &temp);
+        // while(pEbase);
+    }
+    if (isDll)
+    {
+        //peInfo.oldbase = 0;
+        int(WINAPI * p)(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) = (PVOID)(pEbase + pPeInfo->originalEntryPoint);
+        //asm("leave");
+        //asm("int $0x2d");
+        //asm("nop");
+
+        //while((*(struct PEINFO *)(pEbase + sizeof(IMAGE_DOS_SIGNATURE))).oldbase==0);
+        // while ((DWORD)p > 0);
+        p(hInstance, (DWORD)hPrevInstance, (LPVOID)lpCmdLine);
+        //while((DWORD)p>0);
+        //asm("ret");
+    }
+    else
+    {
+        //peInfo.oldbase = 0;
+        int(WINAPI * p)(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) = (PVOID)(pEbase + pPeInfo->originalEntryPoint);
+        //asm("leave");
+        //asm("int $0x2d");
+        //asm("nop");
+
+        //while((*(struct PEINFO *)(pEbase + sizeof(IMAGE_DOS_SIGNATURE))).oldbase==0);
+        // while ((DWORD)p > 0);
+        p(hInstance, hPrevInstance, lpCmdLine, nCmdShow);
+        //while((DWORD)p>0);
+        //asm("ret");
+    }
+    return  1;
 }
 
+BOOL isDLL(DWORD peBase)
+{
+    return (getNtHeaders(peBase)->FileHeader.Characteristics) & IMAGE_FILE_DLL;
+}
 //RSHash
 unsigned int RSHash(char *str, int isWide)
 {
@@ -48,9 +97,17 @@ unsigned int RSHash(char *str, int isWide)
     return (hash & 0x7FFFFFFF);
 }
 
-void getBaseAddresses(PDWORD pKernelDllBase, PDWORD pPEBase)
+__declspec(naked) DWORD getEIP()
+{
+    asm volatile("popl %eax");
+    asm volatile("pushl %eax");
+    asm("ret");
+}
+
+__declspec(dllexport) void getBaseAddresses(PDWORD pKernelDllBase, PDWORD pPEBase)
 {
     DWORD kernal32Base = 0;
+    volatile DWORD isDll = 0x42345678;
 
     //asm  ("push eax;mov  eax,fs:[0x30];mov  eax,[eax+0x0c];mov  esi,[eax+0x1c];lodsd;mov  eax,[eax+0x08];mov  kernal32Base,eax;pop  eax;");
 
@@ -93,6 +150,34 @@ void getBaseAddresses(PDWORD pKernelDllBase, PDWORD pPEBase)
     }
 
     *pKernelDllBase = kernal32Base;
+
+    if (isDll)
+    {
+        DWORD pc = 1;
+        // __asm__ __volatile__ ("movl %%eip,%0":"=a" (pc):);
+        //asm volatile("mov $1f, %0 \n\t" "1:" : "=r"(pc):);
+        // label:;
+        // pc=(DWORD)&&label;
+        //while(Peb);
+        pc = getEIP();
+        pNode = pNodeStart;
+        while (pNode)
+        {
+            DWORD base = *(PDWORD)((PBYTE)pNode + 0x70);
+            //while(pc);
+            PIMAGE_NT_HEADERS pntHeader = getNtHeaders(base);
+            if ((pntHeader->OptionalHeader.ImageBase < pc) && (pc < pntHeader->OptionalHeader.ImageBase + pntHeader->OptionalHeader.SizeOfImage))
+            {
+                *pPEBase = base;
+                break;
+            }
+            pNode = pNode->Flink;
+            if (pNode == pNodeStart)
+            {
+                break;
+            }
+        }
+    }
 }
 
 PIMAGE_NT_HEADERS getNtHeaders(DWORD pPEbase)
@@ -104,7 +189,7 @@ PVOID getFunction(DWORD pKernel32DllBase, DWORD funcNameHash)
 {
     PIMAGE_EXPORT_DIRECTORY pExportDir = (PIMAGE_EXPORT_DIRECTORY)(pKernel32DllBase +
                                                                    getNtHeaders(pKernel32DllBase)->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
-    DWORD funcNum = pExportDir->NumberOfFunctions;
+    DWORD funcNum = pExportDir->NumberOfNames;
     PCHAR *functionNames;
     functionNames = (PCHAR *)(pKernel32DllBase + pExportDir->AddressOfNames);
     DWORD *functionAddresses = (PDWORD)(pKernel32DllBase + pExportDir->AddressOfFunctions);
@@ -167,7 +252,9 @@ DWORD RSHashFunc(DWORD start, DWORD end)
 
 __declspec(dllexport) void antiDebug(struct FUNCTION_TABLE *funcTable, DWORD peBase, struct PEINFO *pPeInfo, DWORD kernel32DllBase)
 {
-
+    DWORD(WINAPI * fGetTickCount)
+    (void) = getFunction(kernel32DllBase, 0x77cc8240);
+    DWORD start = fGetTickCount();
     FARPROC(WINAPI * func_getProcAddress)
     (HINSTANCE, LPSTR) = funcTable->funcGetProcAddress;
     HMODULE(WINAPI * func_LoadLibrary)
@@ -181,51 +268,99 @@ __declspec(dllexport) void antiDebug(struct FUNCTION_TABLE *funcTable, DWORD peB
     st2[1] = 0x706e496b;
     st2[2] = 0x7475;
 
-    BOOL (*fBlockInput)
+    BOOL(*fBlockInput)
     (BOOL) = (PVOID)func_getProcAddress(func_LoadLibrary((char *)st), (char *)(st2));
     fBlockInput(TRUE);
     BOOL(WINAPI * fIsDebuggerPresent)
     (void) = getFunction(kernel32DllBase, 0x2feb1d78);
     if (fIsDebuggerPresent())
     {
+#ifdef STUB_DEBUG
+        while (peBase)
+            ;
+#endif
         funcTable = NULL;
         fixROC(funcTable, peBase, pPeInfo);
         fixIAT(funcTable, peBase, pPeInfo);
         return;
     }
+
     PDWORD Teb = (PDWORD)NtCurrentTeb();         //_TEB
     PDWORD Peb = *(PDWORD *)((PBYTE)Teb + 0x30); //PEB
+    // if(*(PBYTE)((PBYTE)Peb+0x3)){
+    //     asm("jmp *%eax");
+    // }
     DWORD NtGlobalFlags = *(PDWORD)((PBYTE)Peb + 0x68);
     //while (peBase);
     if (NtGlobalFlags & 0x70 == 0x70)
     {
+#ifdef STUB_DEBUG
+        while (peBase)
+            ;
+#endif
         asm("subl    $0xc, %esp");
         asm("ret");
     }
     fBlockInput(TRUE);
+    DWORD end = fGetTickCount();
+    if (end - start > 1000 * 3)
+    {
+#ifdef STUB_DEBUG
+        while (peBase)
+            ;
+#endif
+        asm("popl %eax");
+        fixROC(funcTable, peBase, pPeInfo);
+        return;
+    }
 
     decryptTextSection(funcTable, peBase, pPeInfo);
     fixROC(funcTable, peBase, pPeInfo);
-    fixIAT(funcTable, peBase, pPeInfo);
+    fixIAT(0, peBase, pPeInfo);
+    end = fGetTickCount();
+    if (end - start > 1000 * 2)
+    {
+#ifdef STUB_DEBUG
+        while (peBase)
+            ;
+#endif
+        fixIAT(funcTable, peBase, pPeInfo);
+        return;
+    }
+    //while(fGetTickCount()>0);
 }
 
 __declspec(dllexport) DWORD decryptTextSection(struct FUNCTION_TABLE *funcTable, DWORD peBase, struct PEINFO *peInfo)
 {
     //while(peBase>0);
+    //while (peBase);
     DWORD lastFuncHash = 0x12345678;
-    DWORD funcAddr1=(DWORD)antiDebug;
-    DWORD funcAddr2=(DWORD)decryptTextSection;
+    DWORD funcAddr1 = 0x22345678;
+    DWORD funcAddr2 = 0x32345678;
+
+    funcAddr1 += peBase;
+    funcAddr2 += peBase;
     if (funcTable == NULL)
     {
-        DWORD hash=RSHashFunc(funcAddr1,funcAddr2);
+        DWORD hash = RSHashFunc(funcAddr1, funcAddr2);
         return hash;
     }
     //while (peBase);
     DWORD hash = RSHashFunc(funcAddr1, funcAddr2);
-    if (hash != lastFuncHash)
+    if (hash - lastFuncHash)
     {
+#ifdef STUB_DEBUG
+        while (peBase)
+            ;
+#endif
         return 0;
     }
+    //while (peBase);
+    DWORD kernel32DllBase = 0;
+    getBaseAddresses(&kernel32DllBase, &hash);
+    DWORD(WINAPI * fGetTickCount)
+    (void) = getFunction(kernel32DllBase, 0x77cc8240);
+    DWORD timeStart = fGetTickCount();
     PIMAGE_NT_HEADERS pNtHeaders = getNtHeaders(peBase);
     DWORD key = pNtHeaders->FileHeader.TimeDateStamp;
     key = key ^ 0x20210416;
@@ -233,6 +368,7 @@ __declspec(dllexport) DWORD decryptTextSection(struct FUNCTION_TABLE *funcTable,
     key = key ^ (peInfo->originalEntryPoint);
     PIMAGE_SECTION_HEADER pTextSectionHeader = IMAGE_FIRST_SECTION(pNtHeaders);
     DWORD entryPoint = peInfo->originalEntryPoint;
+    //while (key);
 
     while (1)
     {
@@ -278,6 +414,16 @@ __declspec(dllexport) DWORD decryptTextSection(struct FUNCTION_TABLE *funcTable,
     }
     //while(oldProtect==PAGE_EXECUTE_READ);
 
+    DWORD timeEnd = fGetTickCount();
+    if (timeEnd - timeStart > 1000 * 2)
+    {
+#ifdef STUB_DEBUG
+        while (peBase)
+            ;
+#endif
+        fixIAT(funcTable, peBase, (PVOID)0x4127C0);
+        return 0;
+    }
     DWORD temp = 0;
     //while(peBase>0);
     //asm("subl    $0x10, %esp");
@@ -293,6 +439,30 @@ __declspec(dllexport) DWORD decryptTextSection(struct FUNCTION_TABLE *funcTable,
 
 DWORD fixROC(struct FUNCTION_TABLE *funcTable, DWORD peBase, struct PEINFO *pPeInfo)
 {
+
+    DWORD lastFuncHash = 0x12345678;
+    DWORD funcAddr1 = 0x22345678;
+    DWORD funcAddr2 = 0x32345678;
+    funcAddr1 += peBase;
+    funcAddr2 += peBase;
+    if (funcTable == NULL)
+    {
+        DWORD hash = RSHashFunc(funcAddr1, funcAddr2);
+        return hash;
+    }
+    // while (peBase);
+    DWORD hash = RSHashFunc(funcAddr1, funcAddr2);
+    if (hash / lastFuncHash != lastFuncHash / hash)
+    {
+#ifdef STUB_DEBUG
+        while (peBase)
+            ;
+#endif
+        return 0;
+    }
+
+    fixIAT(funcTable, peBase, pPeInfo);
+
     if (pPeInfo->ROC.VirtualAddress == 0)
     {
         return 0;
@@ -303,6 +473,7 @@ DWORD fixROC(struct FUNCTION_TABLE *funcTable, DWORD peBase, struct PEINFO *pPeI
     }
     PIMAGE_BASE_RELOCATION pRelo = (PIMAGE_BASE_RELOCATION)(peBase + pPeInfo->ROC.VirtualAddress);
     PIMAGE_NT_HEADERS pNtHeaders = getNtHeaders(peBase);
+    // while (peBase);
     while (pRelo->VirtualAddress != 0)
     {
         DWORD num = (pRelo->SizeOfBlock - sizeof(PIMAGE_BASE_RELOCATION)) / (sizeof(WORD));
@@ -319,10 +490,32 @@ DWORD fixROC(struct FUNCTION_TABLE *funcTable, DWORD peBase, struct PEINFO *pPeI
         }
         pRelo = (PIMAGE_BASE_RELOCATION)((PBYTE)pRelo + pRelo->SizeOfBlock);
     }
+    // while (peBase);
     return 0;
 }
 DWORD fixIAT(struct FUNCTION_TABLE *funcTable, DWORD peBase, struct PEINFO *pPeInfo)
 {
+
+    DWORD lastFuncHash = 0x12345678;
+    DWORD funcAddr1 = 0x22345678;
+    DWORD funcAddr2 = 0x32345678;
+    funcAddr1 += peBase;
+    funcAddr2 += peBase;
+    if (funcTable == NULL)
+    {
+        DWORD hash = RSHashFunc(funcAddr1, funcAddr2);
+        return hash;
+    }
+    // while (peBase);
+    DWORD hash = RSHashFunc(funcAddr1, funcAddr2);
+    if ((hash ^ lastFuncHash) != 0)
+    {
+#ifdef STUB_DEBUG
+        while (peBase)
+            ;
+#endif
+        return 0;
+    }
     HMODULE(WINAPI * fGetModuleHandleA)
     (LPCSTR lpModuleName) = funcTable->funcGetModuleHandleA;
     HMODULE(WINAPI * fLoadLibraryA)
@@ -334,9 +527,27 @@ DWORD fixIAT(struct FUNCTION_TABLE *funcTable, DWORD peBase, struct PEINFO *pPeI
 
     PIMAGE_IMPORT_DESCRIPTOR pImportTable = (PIMAGE_IMPORT_DESCRIPTOR)(peBase + pPeInfo->IAT.VirtualAddress);
 
+    DWORD st[4];
+    st[0] = 0x6e72656b;
+    st[1] = 0x32336c65;
+    st[2] = 0x6c6c642e;
+    st[3] = 0x0;
+    DWORD st2[4];
+    st2[0] = 0x54746547;
+    st2[1] = 0x436b6369;
+    st2[2] = 0x746e756f;
+    st2[3] = 0x0;
+    DWORD(WINAPI * fGetTickCount)
+    (void) = (PVOID)fGetProcAddress(fLoadLibraryA((char *)st), (char *)(st2));
+    DWORD timeStart = fGetTickCount();
     while (pImportTable->OriginalFirstThunk)
     {
-
+        DWORD timeEnd = fGetTickCount();
+        if (timeEnd - timeStart > 1000 * 2)
+        {
+            fixIAT(funcTable, peBase, (PVOID)0x4127C0);
+            return 0;
+        }
         LPCSTR dllName = (LPCSTR)(peBase + pImportTable->Name);
         HMODULE dllBase = fGetModuleHandleA(dllName);
         if (dllBase == NULL)
@@ -366,5 +577,6 @@ DWORD fixIAT(struct FUNCTION_TABLE *funcTable, DWORD peBase, struct PEINFO *pPeI
 
         pImportTable++;
     }
+    // while(peBase);
     return 0;
 }

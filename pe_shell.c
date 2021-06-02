@@ -23,21 +23,31 @@ struct
 
 struct
 {
-    PBYTE* dllTextSec;
+    PBYTE dllTextSec;
     DWORD dllTextSecSize;
     DWORD runFuncAddress;
+    struct 
+    {
+        DWORD num;
+        PDWORD addrs;
+        DWORD funcGetBaseAddressesAddr;
+    } fixInfos;
+    
 } mDll;
 
-int add_shell(const char *filePath){
+int add_shell(const char *filePath,const char* targetFilePath){
+    mDll.fixInfos.num=4;
     if(open_PE_file(filePath)<0){
         return -1;
     }
     encryptTextSec();
     destroynTables();
     loadStubDll();
-    saveNewPEFile(filePath);
+    saveNewPEFile(targetFilePath);
+    //printf("加壳成功");
     free(pPeFileBuf);
     free(mDll.dllTextSec);
+    free(mDll.fixInfos.addrs);
 }
 int open_PE_file(const char *filePath){
     
@@ -88,6 +98,17 @@ DWORD RSHashFunc(DWORD start, DWORD end)
     return (hash & 0x7FFFFFFF);
 }
 
+void modifyVals(DWORD start,DWORD target,DWORD val){
+    PDWORD p=(PDWORD)start;
+    DWORD end=start+0x4000;
+    while((DWORD)p<end){
+        if(*p==target){
+            *p=val;
+            return;
+        }
+        p=(PDWORD)(((PBYTE)p)+1);
+    }
+}
 
 void loadStubDll(){
     char stubDllPath[]=".\\stub.dll";
@@ -106,8 +127,8 @@ void loadStubDll(){
         }
         pTextSecHeader++;
     }
-    printf("text Sec RVA:%lx,file offset:%lx\n",pTextSecHeader->VirtualAddress,pTextSecHeader->PointerToRawData);
-    PBYTE* textSec=malloc(pTextSecHeader->SizeOfRawData);
+    printf("DLL text Sec RVA:%lx,entryPoint:%lx\n",pTextSecHeader->VirtualAddress,entryFuncVA);
+    PBYTE textSec=malloc(pTextSecHeader->SizeOfRawData);
     memcpy(textSec,((PBYTE)stubModule)+(pTextSecHeader->VirtualAddress),pTextSecHeader->SizeOfRawData);
     mDll.dllTextSecSize=pTextSecHeader->SizeOfRawData;
     mDll.dllTextSec=textSec;
@@ -117,15 +138,18 @@ void loadStubDll(){
     DWORD oldProtect;
     //VirtualProtect(textSec,pTextSecHeader->SizeOfRawData,PAGE_EXECUTE_READWRITE,&oldProtect);
     char funcNames[4][50]={"antiDebug","decryptTextSection","fixROC","fixIAT"};
-    int chainNum=1;
+    int chainNum=mDll.fixInfos.num;
+    mDll.fixInfos.addrs=malloc(chainNum*sizeof(DWORD));
     for(int i=0;i<chainNum;i++){
-        DWORD originFuncAddr1=(DWORD)GetProcAddress(stubModule,funcNames[i]);
-        DWORD originFuncAddr2=(DWORD)GetProcAddress(stubModule,funcNames[i+1]);
-        DWORD funcAddr1=(DWORD)GetProcAddress(stubModule,funcNames[i])-((DWORD)stubModule)-pTextSecHeader->VirtualAddress+(DWORD)textSec;
-        DWORD funcAddr2=(DWORD)GetProcAddress(stubModule,funcNames[i+1])-((DWORD)stubModule)-pTextSecHeader->VirtualAddress+(DWORD)textSec;
-        DWORD hash=RSHashFunc(funcAddr1,funcAddr2);
-        
+        // DWORD originFuncAddr1=(DWORD)GetProcAddress(stubModule,funcNames[i]);
+        // DWORD originFuncAddr2=(DWORD)GetProcAddress(stubModule,funcNames[i+1]);
+        // DWORD funcAddr1=(DWORD)GetProcAddress(stubModule,funcNames[i])-((DWORD)stubModule)-pTextSecHeader->VirtualAddress+(DWORD)textSec;
+        // DWORD funcAddr2=(DWORD)GetProcAddress(stubModule,funcNames[i+1])-((DWORD)stubModule)-pTextSecHeader->VirtualAddress+(DWORD)textSec;
+        // DWORD hash=RSHashFunc(funcAddr1,funcAddr2);
+        mDll.fixInfos.addrs[i]=(DWORD)GetProcAddress(stubModule,funcNames[i])-((DWORD)stubModule)-pTextSecHeader->VirtualAddress+(DWORD)textSec;
     }
+    mDll.fixInfos.funcGetBaseAddressesAddr=(DWORD)GetProcAddress(stubModule,"getBaseAddresses")
+        -((DWORD)stubModule)-pTextSecHeader->VirtualAddress+(DWORD)textSec;
 }
 
 void destroynTables(){
@@ -142,7 +166,8 @@ void encryptTextSec(){
     DWORD key=mPe.pNtHeader->FileHeader.TimeDateStamp;
     key=key^0x20210416;
     key=key^mPe.pNtHeader->OptionalHeader.AddressOfEntryPoint;
-    printf("originKey:%lx;timestamp:%lx;eP:%lx\n",key,mPe.pNtHeader->FileHeader.TimeDateStamp,mPe.pNtHeader->OptionalHeader.AddressOfEntryPoint);
+    printf("originKey:%lx;timestamp:%lx;eP:%lx;imagebase:%lx;\n",key,mPe.pNtHeader->FileHeader.TimeDateStamp,mPe.pNtHeader->OptionalHeader.AddressOfEntryPoint,
+        mPe.pNtHeader->OptionalHeader.ImageBase);
     
     DWORD entryPoint=mPe.pNtHeader->OptionalHeader.AddressOfEntryPoint;
     PIMAGE_SECTION_HEADER pTextSectionHeader=IMAGE_FIRST_SECTION(mPe.pNtHeader);
@@ -196,13 +221,21 @@ int check_PE(){
     return 1;
 }
 
+void print_mem_c(PBYTE p){
+    int i=0;
+    for(i=0;i<0x180;i++){   
+        BYTE Ldr=*(PBYTE)((PBYTE)p+i*0x1);
+        printf("offset:0x%lx,Val:%c 0x%x\n",i,Ldr,Ldr);
+    }
+}
 #define ALIGNIT(ALIG,NUM) ((NUM)%(ALIG)==0?(NUM):((NUM)/(ALIG)+1)*(ALIG))
-void saveNewPEFile(const char *originalFilePath){
-    char fname[_MAX_FNAME];  
-    char ext[_MAX_EXT];
-    _splitpath(originalFilePath,NULL,NULL,fname,ext);
-    char newfilepath[_MAX_FNAME+_MAX_EXT+16];
-    sprintf(newfilepath,("./%s_%s"),fname,ext);
+void saveNewPEFile(const char *targetFilePath){
+    // char fname[_MAX_FNAME];  
+    // char ext[_MAX_EXT];
+    // _splitpath(originalFilePath,NULL,NULL,fname,ext);
+    // char newfilepath[_MAX_FNAME+_MAX_EXT+16];
+    // sprintf(newfilepath,("./%s_%s"),fname,ext);
+    const char* newfilepath=targetFilePath;
     
     PIMAGE_SECTION_HEADER pFirstSectionHeader=IMAGE_FIRST_SECTION(mPe.pNtHeader);
     WORD secNum=mPe.pNtHeader->FileHeader.NumberOfSections;
@@ -224,6 +257,23 @@ void saveNewPEFile(const char *originalFilePath){
     newSection.Misc.VirtualSize=mDll.dllTextSecSize;
     *(pLastSectionHeader+1)=newSection;
 
+    //printf("hash chaiin length:%d\n",mDll.fixInfos.num);
+    for(int i=0;i<mDll.fixInfos.num-1;i++){
+        DWORD funcStart=mDll.fixInfos.addrs[i];
+        DWORD nextFuncStart=mDll.fixInfos.addrs[i+1];
+        DWORD funcHash=RSHashFunc(funcStart,nextFuncStart);
+        //print_mem_c((PBYTE)nextFuncStart);
+        modifyVals(nextFuncStart,0x12345678,funcHash);
+        modifyVals(nextFuncStart,0x22345678,funcStart-(DWORD32)mDll.dllTextSec+newSection.VirtualAddress);
+        modifyVals(nextFuncStart,0x32345678,nextFuncStart-(DWORD32)mDll.dllTextSec+newSection.VirtualAddress);
+        //print_mem_c((PBYTE)nextFuncStart);
+    }
+    BOOL isDLL=(mPe.pNtHeader->FileHeader.Characteristics) & IMAGE_FILE_DLL;
+    modifyVals(mDll.fixInfos.funcGetBaseAddressesAddr,0x42345678,isDLL);
+    modifyVals(mDll.runFuncAddress+(DWORD)mDll.dllTextSec,0x42345678,isDLL);
+
+    //while (pPeFileBuf);
+    
     memcpy(pPeFileBuf+sizeof(IMAGE_DOS_SIGNATURE),&peInfo,sizeof(peInfo));
     printf("Peinfo at:0x%x\n",0+sizeof(IMAGE_DOS_SIGNATURE));
 
